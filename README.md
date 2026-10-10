@@ -1,24 +1,47 @@
-# parallel-execution
+# Parallel execution for coding agents
 
-An agent skill for coordinating subagents in separate Git worktrees and running independent terminal commands within a shared concurrency limit. It uses the host's agent and terminal tools by default. The optional Rust runner serves resource-sensitive or repeated subprocess batches.
+Coordinate independent coding agents in separate Git worktrees, then review and integrate their work. Run a few independent commands with your agent's terminal tools. An optional Rust runner handles repeated or resource-sensitive batches.
+
+```text
+orchestrator: choose tasks, set a shared limit, review and integrate
+├─ agent A → worktree A → its own commands
+└─ agent B → worktree B → its own commands
+```
 
 ## Install
 
-Copy `skills/parallel-execution` into the skills directory used by your agent host. For Codex, you can ask:
+Install the skill in your project with the [Skills CLI](https://github.com/vercel-labs/skills):
 
-```text
-$skill-installer install https://github.com/djairofilho/parallel-execution-skill/tree/main/skills/parallel-execution
+```sh
+npx skills add djairofilho/parallel-execution-skill --skill parallel-execution
 ```
 
-You can also install it at `~/.agents/skills/parallel-execution` in hosts that read that directory. Invoke `$parallel-execution` when your host supports named skills, or describe the task. The workflow uses the host's own subagent facilities; it does not require a specific agent CLI.
+Alternatively, copy [`skills/parallel-execution`](skills/parallel-execution) into the skills directory your agent reads. In Codex, you can ask `$skill-installer` to install [this skill folder](https://github.com/djairofilho/parallel-execution-skill/tree/main/skills/parallel-execution). The workflow uses the host's agent and terminal tools; it is not tied to one agent CLI.
 
-## Requirements
+## Try it on a real task
 
-- Git and a target repository with at least one commit for isolated code edits.
-- Rust and Cargo only when using the optional subprocess runner. Build instructions are in [compute.md](skills/parallel-execution/references/compute.md).
-- A host that can delegate subagents into separate worktrees for parallel code edits. If it cannot, run independent terminal commands directly or edit sequentially.
-- `nvidia-smi` only for tasks marked `gpu: true`.
+Give your agent a task whose parts can be checked separately. For example, in an event app repository:
 
-Read [SKILL.md](skills/parallel-execution/SKILL.md) for the orchestration flow and [agents.md](skills/parallel-execution/references/agents.md) for the shared limit. The Rust runner still includes legacy Codex/OpenCode CLI adapters in `agents` mode; they are optional and are not part of the provider-neutral flow. Nothing commits or merges automatically.
+> Use `$parallel-execution` to add a city filter to the event feed and an event card component. Assign the filter and card to separate agents in isolated worktrees, with clear file ownership. Limit active agents and commands to four slots total. Integrate the changes, run the project's tests and build, and report any conflicts or unfinished work. Do not commit or merge automatically.
+
+The orchestrator should identify the files and checks in that repository before delegating. If the tasks depend on the same file or the host cannot isolate writing agents, it should work sequentially.
+
+In a small local fixture, one agent owned `src/events.py` (city filtering) and another owned `src/cards.py` (card rendering). They worked in separate worktrees and made no commits. After integration, `python -m unittest discover -s tests -v` passed all five tests, including a filter-to-render integration test. This validates that example's division and integration; it does **not** establish a general speedup.
+
+## When to use it
+
+- **Independent code changes:** give each agent owned paths and an isolated worktree, then review and test the combined result.
+- **A few independent commands:** use the host's terminal tools under one shared concurrency limit.
+- **Repeated or resource-sensitive jobs:** use the optional Rust runner for CPU/RAM/NVIDIA GPU admission, task timeouts, process-tree cleanup, and persistent logs. See [compute.md](skills/parallel-execution/references/compute.md).
+
+Parallel work has coordination and startup costs. A small dependent change may finish faster with one agent. The skill sets a limit for work it coordinates; it does not impose operating-system resource quotas or a global limit across separate runner invocations.
+
+## Requirements and details
+
+- Git and a repository with at least one commit for worktree-based code edits.
+- A host with subagent delegation for parallel code edits. Other tasks can still use its terminal tools.
+- Rust and Cargo only for the optional runner; `nvidia-smi` only for NVIDIA GPU tasks.
+
+Read [SKILL.md](skills/parallel-execution/SKILL.md) for the workflow and [agents.md](skills/parallel-execution/references/agents.md) for worktree ownership and the shared limit. The Rust runner retains optional Codex/OpenCode CLI adapters for existing integrations; they are outside the provider-neutral default workflow. The skill never commits or merges automatically.
 
 License: [MIT](LICENSE).

@@ -1,30 +1,25 @@
-# Parallel agents in Git worktrees
+# Agents and subprocesses
 
-Use `agents` for independent code edits. The target repository needs at least one commit and a clean main worktree. Put the new output directory and history database outside that repository. Install this skill in the target repository or at user scope if child agents must read it.
+The orchestrator owns the global concurrency limit, worktree setup, delegation, and integration. Use the host's available subagent mechanism; the workflow does not depend on a particular agent CLI. Each subagent edits only its assigned worktree and paths. Its subprocesses run from that worktree, with distinct output paths.
 
-Each manifest task has a unique `id` and a `prompt_file` relative to the manifest. Reuse `workload` for comparable tasks. Cold admission defaults to 1.5 CPU cores and 1536 MiB per agent; positive `cpu_cores` and `ram_mb` override these values. Optional `owned_paths` lists relative paths the agent should edit; the review flags changes outside that scope. Set `gpu: true` only if the agent runs local GPU tools.
+## Prepare and allocate
 
-```json
-{
-  "tasks": [
-    {"id": "api", "prompt_file": "prompts/api.txt", "workload": "code-edit", "owned_paths": ["api"]},
-    {"id": "ui", "prompt_file": "prompts/ui.txt", "workload": "code-edit", "owned_paths": ["ui"]}
-  ]
-}
-```
+1. Divide the work by independently reviewable deliverables and assign explicit path ownership. Avoid concurrent edits to the same file. Ensure the target repository has a commit and a clean starting worktree.
+2. Pick `max_active` from the user's limit or the host's available CPU and RAM, leaving capacity for the machine and external work. A subagent consumes one slot. A scheduled subprocess consumes one more. Maintain `active_agents + active_subprocesses + orchestrator_subprocesses <= max_active`.
+3. Allocate each subagent a local subprocess cap before delegation. The sum of caps must fit the remaining global slots. Track active work and pause new launches when the budget is full. Account for CPU, RAM, and GPU use across all worktrees, since independent runner invocations have no shared admission controller. Give one agent ownership of a GPU device at a time.
+4. Create a separate branch and worktree for each subagent, outside the main repository. For example, from the target repository:
 
-After building the runner, from your project directory:
+   ```powershell
+   git worktree add -b parallel/api ../parallel-api HEAD
+   git worktree add -b parallel/ui ../parallel-ui HEAD
+   ```
 
-```powershell
-$skill = Join-Path $HOME ".codex/skills/parallel-execution"
-$runner = Join-Path $skill "native/rust/target/release/parallel-run.exe"
-& $runner agents agents.json --repo . --out-dir ../parallel-runs/batch-1 --workers 2 --provider codex
-```
+5. Delegate each task with its absolute worktree path, owned paths, expected artifact, completion check, and local subprocess cap. Require the subagent to execute commands in that worktree and return a concise change and verification summary. If the host cannot keep a writing subagent in its worktree, run code-editing agents sequentially.
 
-On Linux/macOS, omit `.exe`. For Codex, `--model MODEL` and `--codex-profile NAME` forward the model and profile to each child. `--provider opencode` uses OpenCode instead. The runner creates a branch and worktree per task and saves the clients' JSONL and error logs. It requests Codex `workspace-write` and does not bypass client approvals. The OpenCode adapter uses the client's configured permissions; on Windows it resolves `opencode.cmd` and passes the prompt through `--file`.
+For example, with `max_active = 6`, two active subagents use two slots. Each may receive two subprocess slots, so `2 agents + 2 A children + 2 B children = 6`. A subagent can use its slots with the Rust `tasks` runner from [compute.md](compute.md), setting `--workers` to its assigned cap. Use a separate output directory and history database for each worktree. The caps are fixed for an invocation; reallocate freed slots when launching later batches.
 
-## Review and integration
+## Review and integrate
 
-Inspect `review.md`, `summary.json`, logs, tracked patches, `<id>.changes.json`, and each worktree. The changes inventory includes new files with path, size, and SHA-256; inspect their content in the worktree. The review flags out-of-scope paths and paths changed by multiple agents. Check integration and tests before merging manually. The runner leaves branches and worktrees intact and never commits, merges, or removes them.
+Have each subagent report its worktree, changed and new files, verification results, and unfinished work. Inspect `git status`, diffs, untracked files, and subprocess logs in every worktree. Check ownership boundaries, then apply reviewed tracked changes and copy reviewed new files into the main worktree. Resolve any overlaps there and test the combined result. Do not auto-commit, auto-merge, or delete worktrees.
 
-Token and cost fields reflect only events reported by the client. Codex may report tokens without monetary cost; `usage_complete: false` means the reported total may be incomplete. The adapters have been tested with simulated clients on Windows and Ubuntu via WSL; real provider calls were not verified in that test.
+The Rust runner also retains an optional `agents` CLI mode for existing Codex/OpenCode integrations. That adapter is not used by this provider-neutral workflow; its `--workers` cap is likewise local to that invocation.

@@ -1,26 +1,35 @@
 ---
 name: parallel-execution
-description: Run independent commands or Codex/OpenCode agents in parallel worktrees with local CPU, RAM, and GPU admission. Use for bounded workers, parallel terminal tasks, or isolated code edits.
+description: Coordinate independent agents in isolated Git worktrees and independent subprocesses under a shared resource limit. Use for parallel code edits or bounded terminal jobs.
 ---
 
 # Parallel execution
 
-Split work into independent tasks with clear inputs, outputs, and completion checks. Give scraping jobs separate output paths and respect the target service's rate limits.
+Split work into independent deliverables with clear ownership, inputs, outputs, and completion checks. Start all work that fits the chosen limits; do not wait for one task to finish before admitting another.
 
 ## Choose a mode
 
+- **Code edits:** the orchestrator creates one Git worktree per subagent, delegates through the agent facilities available in the host, and integrates the results. Each subagent may run independent subprocesses inside its worktree. Read [agents.md](references/agents.md).
 - **Independent commands:** use the Rust runner's `tasks` mode. Read [compute.md](references/compute.md) for manifests and resource settings.
-- **Code editing agents:** use `agents` mode, with one Git worktree per task. Read [agents.md](references/agents.md) for setup and review.
-- **Read-only investigation:** native subagents may be simpler. They share the environment; do not assume isolated worktrees.
 
-From the installed skill directory, build once with Rust and Cargo:
+```text
+orchestrator: global limit, delegation, review, integration
+├─ subagent A: worktree A
+│  ├─ subprocess A1
+│  └─ subprocess A2
+└─ subagent B: worktree B
+   ├─ subprocess B1
+   └─ subprocess B2
+```
+
+Choose a shared limit for active work before starting. Count each active subagent and each of its scheduled subprocesses against that limit; assign each subagent a local subprocess allowance so the sum cannot exceed it. The orchestrator must track this budget because the Rust runner's `--workers` applies to one invocation only. Also check CPU, RAM, GPU, and external service limits. Run the orchestrator's own commands within the same budget.
+
+Build the optional subprocess runner once from the installed skill directory:
 
 ```powershell
 cargo build --release --locked --manifest-path native/rust/Cargo.toml
 ```
 
-Run `native/rust/target/release/parallel-run.exe` on Windows or `parallel-run` on Linux/macOS, followed by `tasks` or `agents`, a manifest, and the options in the references. Rebuild after source changes; [Cargo.lock](native/rust/Cargo.lock) pins dependencies.
+Use `native/rust/target/release/parallel-run.exe` on Windows or `parallel-run` on Linux/macOS. [Cargo.lock](native/rust/Cargo.lock) pins dependencies. Adaptive scheduling fills safe slots up to `--workers` from its first pass. Admission estimates are not OS quotas. GPU tasks require `gpu: true` and NVIDIA telemetry.
 
-Adaptive scheduling fills every safe slot up to `--workers` from the first pass. It estimates CPU and RAM by workload, samples every 250 ms, and wakes when a process exits. `--workers` limits one batch, not concurrent runner invocations. GPU tasks require `gpu: true` and NVIDIA telemetry. Admission estimates are not OS resource quotas. Use `--schedule fixed` for comparison.
-
-Windows and Ubuntu via WSL have been tested. Validate locally on other systems. Review `summary.json`, logs, and, for agents, `review.md` and worktrees. Report completion time, correctness, resource peaks, and available token/cost data. The runner never commits or merges.
+Review each subagent's changes and verify the integrated result. The runner never commits or merges. Windows and Ubuntu via WSL have been tested; validate locally on other systems.

@@ -16,10 +16,8 @@ The orchestrator owns the global concurrency limit, worktree setup, delegation, 
 
 5. Delegate each task with its absolute worktree path, owned paths, expected artifact, completion check, and local subprocess cap. Require the subagent to execute commands in that worktree and return a concise change and verification summary. If the host cannot keep a writing subagent in its worktree, run code-editing agents sequentially.
 
-For example, with `max_active = 6`, two active subagents use two slots. Each may receive two subprocess slots, so `2 agents + 2 A children + 2 B children = 6`. A subagent can use its slots with the Rust `tasks` runner from [compute.md](compute.md), setting `--workers` to its assigned cap. Use a separate output directory and history database for each worktree. The caps are fixed for an invocation; reallocate freed slots when launching later batches.
+For example, with `max_active = 6`, two active subagents use two slots. Each may receive two subprocess slots, so `2 agents + 2 A children + 2 B children = 6`. For a few commands, each subagent uses its host's terminal tools and waits for every result. For resource-sensitive batches, it may use the optional runner from [compute.md](compute.md), setting `--workers` to its assigned cap. Give each runner invocation a separate output directory and history database. Reallocate freed slots when launching later batches.
 
 ## Review and integrate
 
 Have each subagent report its worktree, changed and new files, verification results, and unfinished work. Inspect `git status`, diffs, untracked files, and subprocess logs in every worktree. Check ownership boundaries, then apply reviewed tracked changes and copy reviewed new files into the main worktree. Resolve any overlaps there and test the combined result. Do not auto-commit, auto-merge, or delete worktrees.
-
-The Rust runner also retains an optional `agents` CLI mode for existing Codex/OpenCode integrations. That adapter is not used by this provider-neutral workflow; its `--workers` cap is likewise local to that invocation.

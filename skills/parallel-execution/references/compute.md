@@ -1,6 +1,14 @@
-# Independent commands
+# Optional resource-aware subprocess runner
 
-Use `tasks` for independent subprocesses. Give each task a separate output path. `argv` is an argument array, not a shell command; `cwd` is optional and resolves relative to the manifest. Use the same `workload` for comparable tasks so they can share resource history.
+Use the host's terminal tools for a few independent commands. Use the Rust `tasks` runner for repeated or resource-sensitive batches that need automatic CPU/RAM/GPU admission, per-task timeouts and process-tree cleanup, or persistent logs and history. Give each task a separate output path. `argv` is an argument array, not a shell command; `cwd` is optional and resolves relative to the manifest. Use the same `workload` for comparable tasks so they can share resource history.
+
+Build once from the installed skill directory:
+
+```powershell
+cargo build --release --locked --manifest-path native/rust/Cargo.toml
+```
+
+Use `native/rust/target/release/parallel-run.exe` on Windows or `parallel-run` on Linux/macOS. [Cargo.lock](../native/rust/Cargo.lock) pins dependencies. Windows and Ubuntu via WSL have been tested; validate locally on other systems.
 
 ```json
 {
